@@ -33,7 +33,88 @@ com.tcs.orderservice
 └── shared/exception/        # Domain exceptions + GlobalExceptionHandler
 ```
 
-**Flow:** Controller -> MapStruct (DTO->Domain) -> CreateOrderUseCase -> OrderQueuePort -> Azure Queue
+### Architecture Diagram
+
+```mermaid
+graph TB
+    Client["Client / API Consumer"] -->|"POST /api/v1/orders"| Controller
+
+    subgraph INFRASTRUCTURE["Infrastructure Layer"]
+        subgraph IN_ADAPTER["Adapter IN (Driving)"]
+            Controller["OrderController"]
+            DTO_IN["CreateOrderRequest\n(@Valid)"]
+            DTO_OUT["OrderResponse"]
+            Mapper["OrderRestMapper\n(MapStruct)"]
+        end
+
+        subgraph OUT_ADAPTER["Adapter OUT (Driven)"]
+            QueueAdapter["AzureQueueAdapter\n- JSON + Base64\n- boundedElastic()\n- 3 retries / 5s timeout"]
+        end
+
+        Config["AzureQueueConfig"]
+    end
+
+    subgraph APPLICATION["Application Layer"]
+        UseCase["CreateOrderUseCaseImpl"]
+    end
+
+    subgraph DOMAIN["Domain Layer (Pure Java)"]
+        Order["Order"]
+        OrderItem["OrderItem"]
+        PortIn["CreateOrderUseCase\n(Port IN)"]
+        PortOut["OrderQueuePort\n(Port OUT)"]
+    end
+
+    subgraph SHARED["Shared"]
+        ExHandler["GlobalExceptionHandler"]
+        ExCustom["OrderValidationException"]
+    end
+
+    Controller -->|"@Valid"| DTO_IN
+    Controller --> Mapper
+    Mapper -->|"toDomain()"| Order
+    Controller --> PortIn
+    PortIn -.->|implements| UseCase
+    UseCase --> PortOut
+    PortOut -.->|implements| QueueAdapter
+    QueueAdapter --> Config
+    Mapper -->|"toResponse()"| DTO_OUT
+    ExHandler -.->|catches| Controller
+    Order --> OrderItem
+    QueueAdapter -->|"Base64 message"| AQ["Azure Queue Storage\n(Azurite)"]
+    AQ -.->|consumes| PP["Payment Processor"]
+```
+
+### Request Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant Ctrl as OrderController
+    participant V as Jakarta Validation
+    participant M as OrderRestMapper
+    participant UC as CreateOrderUseCaseImpl
+    participant QA as AzureQueueAdapter
+    participant AQ as Azure Queue (Azurite)
+
+    C->>+Ctrl: POST /api/v1/orders
+    Ctrl->>V: @Valid
+    alt Validation fails
+        V-->>C: 400 Bad Request
+    end
+    Ctrl->>M: toDomain(request)
+    M-->>Ctrl: Order
+    Ctrl->>+UC: execute(order)
+    UC->>+QA: send(order)
+    QA->>QA: JSON serialize + Base64
+    QA->>+AQ: sendMessage()
+    AQ-->>-QA: ACK
+    QA-->>-UC: Mono completed
+    UC-->>-Ctrl: Mono Order
+    Ctrl->>M: toResponse(order)
+    M-->>Ctrl: OrderResponse
+    Ctrl-->>C: 201 Created
+```
 
 ## Prerequisites
 
