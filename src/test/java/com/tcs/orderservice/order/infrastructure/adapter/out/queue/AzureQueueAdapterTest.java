@@ -12,15 +12,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.Exceptions;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,16 +63,19 @@ class AzureQueueAdapterTest {
     }
 
     @Test
-    void shouldPropagateErrorWhenQueueClientFails() {
+    void shouldRetryAndPropagateErrorWhenQueueClientFails() {
         Order order = buildOrder();
         when(queueClient.sendMessage(anyString()))
                 .thenThrow(new RuntimeException("Connection refused"));
 
         StepVerifier.create(azureQueueAdapter.send(order))
                 .expectErrorMatches(ex ->
-                        ex instanceof RuntimeException &&
-                        ex.getMessage().equals("Connection refused"))
-                .verify();
+                        Exceptions.isRetryExhausted(ex) &&
+                        ex.getCause() instanceof RuntimeException &&
+                        ex.getCause().getMessage().equals("Connection refused"))
+                .verify(Duration.ofSeconds(30));
+
+        verify(queueClient, atLeast(2)).sendMessage(anyString());
     }
 
     private Order buildOrder() {

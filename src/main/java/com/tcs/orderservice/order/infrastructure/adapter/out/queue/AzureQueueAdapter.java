@@ -9,7 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.util.Base64;
 
 @Slf4j
@@ -30,6 +32,13 @@ public class AzureQueueAdapter implements OrderQueuePort {
                     return true;
                 })
                 .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(5))
+                .retryWhen(Retry.backoff(3, Duration.ofMillis(500))
+                        .doBeforeRetry(signal -> log.warn(
+                                "Retry #{} sending order {} to queue. Cause: {}",
+                                signal.totalRetries() + 1,
+                                order.getOrderId(),
+                                signal.failure().getMessage())))
                 .then();
     }
 
