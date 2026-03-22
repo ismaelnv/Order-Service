@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -49,11 +50,15 @@ public class OrderController {
                                 "messages": ["orderId: orderId is required"]
                             }
                             """)))
-    public Mono<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+    public Mono<ResponseEntity<OrderResponse>> createOrder(@Valid @RequestBody CreateOrderRequest request) {
         return Mono.just(request)
                 .map(orderRestMapper::toDomain)
                 .flatMap(createOrderUseCase::execute)
-                .map(orderRestMapper::toResponse);
+                .map(orderRestMapper::toResponse)
+                .map(orderResponse -> ResponseEntity
+                        .status(HttpStatus.CREATED)
+                        .body(orderResponse)
+                );
     }
 
 }

@@ -28,13 +28,6 @@ public class GlobalExceptionHandler {
         return Mono.just(ResponseEntity.badRequest().body(buildErrorBody(HttpStatus.BAD_REQUEST, errors)));
     }
 
-    @ExceptionHandler(OrderValidationException.class)
-    public Mono<ResponseEntity<Map<String, Object>>> handleOrderValidation(OrderValidationException ex) {
-        log.warn("Order validation error: {}", ex.getMessage());
-        return Mono.just(ResponseEntity.badRequest()
-                .body(buildErrorBody(HttpStatus.BAD_REQUEST, List.of(ex.getMessage()))));
-    }
-
     @ExceptionHandler(org.springframework.web.server.ServerWebInputException.class)
     public Mono<ResponseEntity<Map<String, Object>>> handleBadInput(
             org.springframework.web.server.ServerWebInputException ex) {
